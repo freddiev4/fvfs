@@ -8,7 +8,7 @@ use tokio::time::sleep;
 use tracing::{error, info, warn};
 
 use fvfs_core::metadata::MetadataStore;
-use fvfs_core::{VfsError, WalOp};
+use fvfs_core::{FvfsError, WalOp};
 
 use crate::router::TierRouter;
 
@@ -95,7 +95,7 @@ pub async fn replay_wal(router: Arc<TierRouter>, meta: MetadataStore) {
                         let fid = file_meta.id;
                         tokio::task::spawn_blocking(move || m.set_tier_bitmask(fid, bm))
                             .await
-                            .map_err(|e| VfsError::Other(anyhow::anyhow!("{e}")))?
+                            .map_err(|e| FvfsError::Other(anyhow::anyhow!("{e}")))?
                     }
                     .await
                 }
@@ -111,7 +111,7 @@ pub async fn replay_wal(router: Arc<TierRouter>, meta: MetadataStore) {
                         let fid = file_meta.id;
                         tokio::task::spawn_blocking(move || m.set_tier_bitmask(fid, bm))
                             .await
-                            .map_err(|e| VfsError::Other(anyhow::anyhow!("{e}")))?
+                            .map_err(|e| FvfsError::Other(anyhow::anyhow!("{e}")))?
                     }
                     .await
                 }

@@ -1,10 +1,10 @@
-/// HTTP client wrapper for communicating with vfsd.
+/// HTTP client wrapper for communicating with fvfsd.
 use bytes::Bytes;
 use reqwest::{Client, StatusCode, Url};
 use serde::de::DeserializeOwned;
 use tracing::instrument;
 
-use fvfs_core::{DaemonStatus, FileEntry, FileMetadata, VfsError, VfsPath, WalEntry};
+use fvfs_core::{DaemonStatus, FileEntry, FileMetadata, FvfsError, FvfsPath, WalEntry};
 
 #[derive(Clone)]
 pub struct VfsdClient {
@@ -33,7 +33,7 @@ impl VfsdClient {
     // File operations
 
     #[instrument(skip(self, data), fields(path = %path))]
-    pub async fn put(&self, path: &VfsPath, data: Bytes) -> Result<(), VfsError> {
+    pub async fn put(&self, path: &FvfsPath, data: Bytes) -> Result<(), FvfsError> {
         let url = self.url(&format!("/v1/files{}", path.as_str()));
         let resp = self
             .client
@@ -42,7 +42,7 @@ impl VfsdClient {
             .body(data)
             .send()
             .await
-            .map_err(|e| VfsError::Other(anyhow::anyhow!("HTTP put: {e}")))?;
+            .map_err(|e| FvfsError::Other(anyhow::anyhow!("HTTP put: {e}")))?;
 
         if resp.status().is_success() {
             Ok(())
@@ -52,17 +52,17 @@ impl VfsdClient {
     }
 
     #[instrument(skip(self), fields(path = %path))]
-    pub async fn get(&self, path: &VfsPath) -> Result<Bytes, VfsError> {
+    pub async fn get(&self, path: &FvfsPath) -> Result<Bytes, FvfsError> {
         let url = self.url(&format!("/v1/files{}", path.as_str()));
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| VfsError::Other(anyhow::anyhow!("HTTP get: {e}")))?;
+            .map_err(|e| FvfsError::Other(anyhow::anyhow!("HTTP get: {e}")))?;
 
         if resp.status() == StatusCode::NOT_FOUND {
-            return Err(VfsError::NotFound {
+            return Err(FvfsError::NotFound {
                 path: path.to_string(),
             });
         }
@@ -73,19 +73,19 @@ impl VfsdClient {
         let bytes = resp
             .bytes()
             .await
-            .map_err(|e| VfsError::Other(anyhow::anyhow!("reading body: {e}")))?;
+            .map_err(|e| FvfsError::Other(anyhow::anyhow!("reading body: {e}")))?;
         Ok(bytes)
     }
 
     #[instrument(skip(self), fields(path = %path))]
-    pub async fn delete(&self, path: &VfsPath) -> Result<(), VfsError> {
+    pub async fn delete(&self, path: &FvfsPath) -> Result<(), FvfsError> {
         let url = self.url(&format!("/v1/files{}", path.as_str()));
         let resp = self
             .client
             .delete(url)
             .send()
             .await
-            .map_err(|e| VfsError::Other(anyhow::anyhow!("HTTP delete: {e}")))?;
+            .map_err(|e| FvfsError::Other(anyhow::anyhow!("HTTP delete: {e}")))?;
 
         if resp.status().is_success() || resp.status() == StatusCode::NOT_FOUND {
             Ok(())
@@ -94,56 +94,56 @@ impl VfsdClient {
         }
     }
 
-    pub async fn stat(&self, path: &VfsPath) -> Result<FileMetadata, VfsError> {
+    pub async fn stat(&self, path: &FvfsPath) -> Result<FileMetadata, FvfsError> {
         self.get_json(&format!("/v1/meta{}", path.as_str()), path)
             .await
     }
 
-    pub async fn list(&self, prefix: &VfsPath) -> Result<Vec<FileEntry>, VfsError> {
+    pub async fn list(&self, prefix: &FvfsPath) -> Result<Vec<FileEntry>, FvfsError> {
         self.get_json(&format!("/v1/ls{}", prefix.as_str()), prefix)
             .await
     }
 
-    pub async fn status(&self) -> Result<DaemonStatus, VfsError> {
+    pub async fn status(&self) -> Result<DaemonStatus, FvfsError> {
         let url = self.url("/v1/status");
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| VfsError::Other(anyhow::anyhow!("HTTP status: {e}")))?;
+            .map_err(|e| FvfsError::Other(anyhow::anyhow!("HTTP status: {e}")))?;
         let data: reqwest::Result<DaemonStatus> = resp.json().await;
-        data.map_err(|e| VfsError::Other(anyhow::anyhow!("parse status: {e}")))
+        data.map_err(|e| FvfsError::Other(anyhow::anyhow!("parse status: {e}")))
     }
 
-    pub async fn wal(&self) -> Result<Vec<WalEntry>, VfsError> {
+    pub async fn wal(&self) -> Result<Vec<WalEntry>, FvfsError> {
         let url = self.url("/v1/admin/wal");
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| VfsError::Other(anyhow::anyhow!("HTTP wal: {e}")))?;
+            .map_err(|e| FvfsError::Other(anyhow::anyhow!("HTTP wal: {e}")))?;
         resp.json::<Vec<WalEntry>>()
             .await
-            .map_err(|e| VfsError::Other(anyhow::anyhow!("parse wal: {e}")))
+            .map_err(|e| FvfsError::Other(anyhow::anyhow!("parse wal: {e}")))
     }
 
     async fn get_json<T: DeserializeOwned>(
         &self,
         api_path: &str,
-        vfs_path: &VfsPath,
-    ) -> Result<T, VfsError> {
+        vfs_path: &FvfsPath,
+    ) -> Result<T, FvfsError> {
         let url = self.url(api_path);
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| VfsError::Other(anyhow::anyhow!("HTTP: {e}")))?;
+            .map_err(|e| FvfsError::Other(anyhow::anyhow!("HTTP: {e}")))?;
 
         if resp.status() == StatusCode::NOT_FOUND {
-            return Err(VfsError::NotFound {
+            return Err(FvfsError::NotFound {
                 path: vfs_path.to_string(),
             });
         }
@@ -153,20 +153,20 @@ impl VfsdClient {
 
         resp.json::<T>()
             .await
-            .map_err(|e| VfsError::Other(anyhow::anyhow!("parse response: {e}")))
+            .map_err(|e| FvfsError::Other(anyhow::anyhow!("parse response: {e}")))
     }
 }
 
-fn map_http_error(status: StatusCode, path: &VfsPath) -> VfsError {
+fn map_http_error(status: StatusCode, path: &FvfsPath) -> FvfsError {
     match status {
-        StatusCode::NOT_FOUND => VfsError::NotFound {
+        StatusCode::NOT_FOUND => FvfsError::NotFound {
             path: path.to_string(),
         },
-        StatusCode::CONFLICT => VfsError::AlreadyExists {
+        StatusCode::CONFLICT => FvfsError::AlreadyExists {
             path: path.to_string(),
         },
-        StatusCode::FORBIDDEN => VfsError::PermissionDenied(path.to_string()),
-        StatusCode::BAD_REQUEST => VfsError::InvalidPath(path.to_string()),
-        _ => VfsError::Other(anyhow::anyhow!("HTTP {}", status)),
+        StatusCode::FORBIDDEN => FvfsError::PermissionDenied(path.to_string()),
+        StatusCode::BAD_REQUEST => FvfsError::InvalidPath(path.to_string()),
+        _ => FvfsError::Other(anyhow::anyhow!("HTTP {}", status)),
     }
 }

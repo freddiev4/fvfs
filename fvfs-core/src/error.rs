@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum VfsError {
+pub enum FvfsError {
     #[error("file not found: {path}")]
     NotFound { path: String },
 
@@ -52,4 +52,4 @@ pub enum VfsError {
     Other(#[from] anyhow::Error),
 }
 
-pub type Result<T> = std::result::Result<T, VfsError>;
+pub type Result<T> = std::result::Result<T, FvfsError>;

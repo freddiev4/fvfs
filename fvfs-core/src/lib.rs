@@ -5,8 +5,8 @@ pub mod eviction;
 pub mod metadata;
 pub mod types;
 
-pub use error::{Result, VfsError};
+pub use error::{Result, FvfsError};
 pub use types::{
     DaemonStatus, DeviceInfo, EntryKind, FileEntry, FileMetadata, Tier, TierBitmask, TierStats,
-    VfsPath, WalEntry, WalOp, now_unix,
+    FvfsPath, WalEntry, WalOp, now_unix,
 };

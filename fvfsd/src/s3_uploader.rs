@@ -13,7 +13,7 @@ use tokio::time::interval;
 use tracing::{error, info, warn};
 
 use fvfs_core::metadata::MetadataStore;
-use fvfs_core::{VfsError, WalOp};
+use fvfs_core::{FvfsError, WalOp};
 
 use crate::router::TierRouter;
 
@@ -101,7 +101,7 @@ async fn flush_pending(router: &TierRouter, meta: &MetadataStore, _flush_size_by
             }
         };
 
-        let result: Result<(), VfsError> = async {
+        let result: Result<(), FvfsError> = async {
             let data = router.read(&file_meta.path).await?;
             router.s3.put(&file_meta.path, data).await?;
 
@@ -112,7 +112,7 @@ async fn flush_pending(router: &TierRouter, meta: &MetadataStore, _flush_size_by
             let fid = file_meta.id;
             tokio::task::spawn_blocking(move || m.set_tier_bitmask(fid, bm))
                 .await
-                .map_err(|e| VfsError::Other(anyhow::anyhow!("{e}")))?
+                .map_err(|e| FvfsError::Other(anyhow::anyhow!("{e}")))?
         }
         .await;
 

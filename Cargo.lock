@@ -1262,6 +1262,65 @@ dependencies = [
 ]
 
 [[package]]
+name = "fvfsc"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "chrono",
+ "clap",
+ "fuser",
+ "futures",
+ "fvfs-core",
+ "hex",
+ "libc",
+ "mdns-sd",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "fvfsd"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "aws-config",
+ "aws-sdk-s3",
+ "axum",
+ "bytes",
+ "chrono",
+ "clap",
+ "fuser",
+ "futures",
+ "fvfs-core",
+ "hex",
+ "hostname",
+ "libc",
+ "mdns-sd",
+ "rayon",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "toml",
+ "tower 0.4.13",
+ "tower-http 0.5.2",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3187,65 +3246,6 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
-
-[[package]]
-name = "vfsc"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bytes",
- "chrono",
- "clap",
- "fuser",
- "futures",
- "fvfs-core",
- "hex",
- "libc",
- "mdns-sd",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "vfsd"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "aws-config",
- "aws-sdk-s3",
- "axum",
- "bytes",
- "chrono",
- "clap",
- "fuser",
- "futures",
- "fvfs-core",
- "hex",
- "hostname",
- "libc",
- "mdns-sd",
- "rayon",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
- "tokio",
- "tokio-util",
- "toml",
- "tower 0.4.13",
- "tower-http 0.5.2",
- "tracing",
- "tracing-subscriber",
-]
 
 [[package]]
 name = "vsimd"

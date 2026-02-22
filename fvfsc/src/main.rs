@@ -9,7 +9,7 @@ use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 use fvfs_core::config::Config;
-use fvfs_core::VfsPath;
+use fvfs_core::FvfsPath;
 
 use crate::http_client::VfsdClient;
 use crate::local_cache::LocalCache;
@@ -18,13 +18,13 @@ use crate::local_cache::LocalCache;
 // CLI
 
 #[derive(Parser)]
-#[command(name = "vfsc", about = "fvfs client — mounts the VFS locally via FUSE")]
+#[command(name = "fvfsc", about = "fvfs client — mounts the FVFS locally via FUSE")]
 struct Cli {
     /// Path to the TOML configuration file.
-    #[arg(short, long, default_value = "/etc/vfsd/config.toml")]
+    #[arg(short, long, default_value = "/etc/fvfsd/config.toml")]
     config: PathBuf,
 
-    /// Explicit vfsd URL; skips mDNS discovery.
+    /// Explicit fvfsd URL; skips mDNS discovery.
     #[arg(long, env = "VFSD_URL")]
     url: Option<String>,
 
@@ -34,13 +34,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Mount the VFS locally (requires the `fuse` feature).
+    /// Mount the FVFS locally (requires the `fuse` feature).
     Mount {
         /// Mount point (overrides config).
         mountpoint: Option<PathBuf>,
     },
 
-    /// List a directory in the VFS.
+    /// List a directory in the FVFS.
     Ls {
         #[arg(default_value = "/")]
         path: String,
@@ -49,10 +49,10 @@ enum Command {
     /// Read a file and print it to stdout.
     Cat { path: String },
 
-    /// Write stdin to a file in the VFS.
+    /// Write stdin to a file in the FVFS.
     Put { path: String },
 
-    /// Delete a file from the VFS.
+    /// Delete a file from the FVFS.
     Rm { path: String },
 
     /// Show daemon status.
@@ -67,7 +67,7 @@ enum Command {
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive("vfsc=info".parse().unwrap()))
+        .with_env_filter(EnvFilter::from_default_env().add_directive("fvfsc=info".parse().unwrap()))
         .init();
 
     let cli = Cli::parse();
@@ -79,7 +79,7 @@ async fn main() {
         }
     };
 
-    // Resolve vfsd URL.
+    // Resolve fvfsd URL.
     let vfsd_url = if let Some(url) = cli.url {
         url
     } else {
@@ -132,12 +132,12 @@ async fn run_mount(cfg: Config, client: VfsdClient, cache: LocalCache, mountpoin
         use crate::fuse_handler::fuse_impl::VfscFuse;
         let mp = mountpoint.unwrap_or_else(|| cfg.client.mount_path.clone());
         tokio::fs::create_dir_all(&mp).await.ok();
-        info!("Mounting VFS at {}", mp.display());
+        info!("Mounting FVFS at {}", mp.display());
         let rt = tokio::runtime::Handle::current();
         let fs = VfscFuse::new(client, cache, rt);
         let options = vec![
             fuser::MountOption::RO,
-            fuser::MountOption::FSName("vfsc".into()),
+            fuser::MountOption::FSName("fvfsc".into()),
             fuser::MountOption::AutoUnmount,
         ];
         // Run FUSE in a blocking thread to avoid blocking the async runtime.
@@ -161,7 +161,7 @@ async fn run_mount(cfg: Config, client: VfsdClient, cache: LocalCache, mountpoin
 // Simple CLI commands
 
 async fn run_ls(client: VfsdClient, path: &str) {
-    let vfs_path = match VfsPath::new(path) {
+    let vfs_path = match FvfsPath::new(path) {
         Ok(p) => p,
         Err(e) => { eprintln!("Invalid path: {e}"); return; }
     };
@@ -185,7 +185,7 @@ async fn run_ls(client: VfsdClient, path: &str) {
 }
 
 async fn run_cat(client: VfsdClient, path: &str) {
-    let vfs_path = match VfsPath::new(path) {
+    let vfs_path = match FvfsPath::new(path) {
         Ok(p) => p,
         Err(e) => { eprintln!("Invalid path: {e}"); return; }
     };
@@ -200,7 +200,7 @@ async fn run_cat(client: VfsdClient, path: &str) {
 
 async fn run_put(client: VfsdClient, path: &str) {
     use std::io::Read;
-    let vfs_path = match VfsPath::new(path) {
+    let vfs_path = match FvfsPath::new(path) {
         Ok(p) => p,
         Err(e) => { eprintln!("Invalid path: {e}"); return; }
     };
@@ -213,7 +213,7 @@ async fn run_put(client: VfsdClient, path: &str) {
 }
 
 async fn run_rm(client: VfsdClient, path: &str) {
-    let vfs_path = match VfsPath::new(path) {
+    let vfs_path = match FvfsPath::new(path) {
         Ok(p) => p,
         Err(e) => { eprintln!("Invalid path: {e}"); return; }
     };
@@ -226,7 +226,7 @@ async fn run_rm(client: VfsdClient, path: &str) {
 async fn run_status(client: VfsdClient) {
     match client.status().await {
         Ok(status) => {
-            println!("vfsd v{} — uptime {}s", status.version, status.uptime_secs);
+            println!("fvfsd v{} — uptime {}s", status.version, status.uptime_secs);
             for tier in &status.tiers {
                 println!(
                     "  {} : {} files, {} MB",

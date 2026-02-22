@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use crate::error::{Result, VfsError};
+use crate::error::{Result, FvfsError};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -26,9 +26,9 @@ pub struct DaemonConfig {
 impl Default for DaemonConfig {
     fn default() -> Self {
         DaemonConfig {
-            mount_path: PathBuf::from("/mnt/vfs"),
+            mount_path: PathBuf::from("/mnt/fvfs"),
             http_port: 7734,
-            metadata_db: PathBuf::from("/var/vfsd/meta.db"),
+            metadata_db: PathBuf::from("/var/fvfsd/meta.db"),
         }
     }
 }
@@ -106,8 +106,8 @@ pub struct ClientConfig {
 impl Default for ClientConfig {
     fn default() -> Self {
         ClientConfig {
-            mount_path: PathBuf::from("/mnt/vfs"),
-            local_cache_path: PathBuf::from("/tmp/vfsc-cache"),
+            mount_path: PathBuf::from("/mnt/fvfs"),
+            local_cache_path: PathBuf::from("/tmp/fvfsc-cache"),
             local_cache_gb: 20,
         }
     }
@@ -117,8 +117,8 @@ impl Config {
     /// Load configuration from a TOML file.
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self> {
         let contents = std::fs::read_to_string(path.as_ref())
-            .map_err(|e| VfsError::Config(format!("reading config: {e}")))?;
-        toml::from_str(&contents).map_err(|e| VfsError::Config(format!("parsing config: {e}")))
+            .map_err(|e| FvfsError::Config(format!("reading config: {e}")))?;
+        toml::from_str(&contents).map_err(|e| FvfsError::Config(format!("parsing config: {e}")))
     }
 
     /// Load from a file if it exists, otherwise return a default configuration.
@@ -135,19 +135,19 @@ impl Config {
             daemon: DaemonConfig::default(),
             tiers: TiersConfig {
                 local: LocalTierConfig {
-                    path: PathBuf::from("/tmp/vfs-local"),
+                    path: PathBuf::from("/tmp/fvfs-local"),
                     high_watermark_gb: 200,
                     low_watermark_gb: 150,
                 },
                 nas: NasTierConfig {
-                    path: PathBuf::from("/tmp/vfs-nas"),
+                    path: PathBuf::from("/tmp/fvfs-nas"),
                     high_watermark_gb: 2000,
                     low_watermark_gb: 1500,
                 },
                 s3: S3TierConfig {
-                    bucket: "freddie-vfs".into(),
+                    bucket: "freddie-fvfs".into(),
                     region: "us-east-1".into(),
-                    prefix: "vfs/".into(),
+                    prefix: "fvfs/".into(),
                 },
             },
             upload: UploadConfig::default(),

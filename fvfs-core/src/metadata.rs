@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::error::Result;
 use crate::types::{
-    EntryKind, FileMetadata, TierBitmask, VfsPath, WalEntry, WalOp, now_unix,
+    EntryKind, FileMetadata, TierBitmask, FvfsPath, WalEntry, WalOp, now_unix,
 };
 
 /// Thread-safe SQLite metadata store.
@@ -90,7 +90,7 @@ impl MetadataStore {
     }
 
     /// Retrieve metadata for a single path.
-    pub fn get(&self, path: &VfsPath) -> Result<Option<FileMetadata>> {
+    pub fn get(&self, path: &FvfsPath) -> Result<Option<FileMetadata>> {
         let conn = self.conn.lock().unwrap();
         let result = conn
             .query_row(
@@ -120,7 +120,7 @@ impl MetadataStore {
     }
 
     /// List direct children of `dir_path` (non-recursive).
-    pub fn list_dir(&self, dir_path: &VfsPath) -> Result<Vec<FileMetadata>> {
+    pub fn list_dir(&self, dir_path: &FvfsPath) -> Result<Vec<FileMetadata>> {
         let conn = self.conn.lock().unwrap();
         // Match paths that are exactly one segment deeper than dir_path.
         let prefix = if dir_path.as_str() == "/" {
@@ -167,7 +167,7 @@ impl MetadataStore {
     }
 
     /// Delete a file entry.
-    pub fn delete(&self, path: &VfsPath) -> Result<()> {
+    pub fn delete(&self, path: &FvfsPath) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM files WHERE path = ?1", params![path.as_str()])?;
         Ok(())
@@ -338,7 +338,7 @@ fn row_to_metadata(row: &rusqlite::Row<'_>) -> rusqlite::Result<FileMetadata> {
     let mime: Option<String> = row.get(9)?;
     Ok(FileMetadata {
         id: row.get(0)?,
-        path: VfsPath::new(row.get::<_, String>(1)?).unwrap_or_else(|_| VfsPath::new("/").unwrap()),
+        path: FvfsPath::new(row.get::<_, String>(1)?).unwrap_or_else(|_| FvfsPath::new("/").unwrap()),
         kind: if is_dir != 0 {
             EntryKind::Directory
         } else {

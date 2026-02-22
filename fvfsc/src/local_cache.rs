@@ -1,4 +1,4 @@
-/// Local read cache for vfsc.
+/// Local read cache for fvfsc.
 ///
 /// Files are stored keyed by their SHA-256 hash, avoiding redundant fetches
 /// when the same content is read multiple times (e.g. the same file from

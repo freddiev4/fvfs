@@ -1,7 +1,7 @@
-/// FUSE handler for vfsd (optional — requires the `fuse` cargo feature).
+/// FUSE handler for fvfsd (optional — requires the `fuse` cargo feature).
 ///
 /// Translates POSIX syscalls into TierRouter operations.
-/// Maintains an in-memory inode ↔ VfsPath map; inodes are the SQLite `id` values.
+/// Maintains an in-memory inode ↔ FvfsPath map; inodes are the SQLite `id` values.
 /// Root is inode 1 (special-cased, not stored in SQLite).
 #[cfg(feature = "fuse")]
 pub mod fuse_impl {
@@ -17,7 +17,7 @@ pub mod fuse_impl {
     use tokio::runtime::Handle;
 
     use fvfs_core::metadata::MetadataStore;
-    use fvfs_core::{EntryKind, FileMetadata, VfsError, VfsPath};
+    use fvfs_core::{EntryKind, FileMetadata, FvfsError, FvfsPath};
 
     use crate::router::TierRouter;
 
@@ -27,8 +27,8 @@ pub mod fuse_impl {
 
     /// In-memory inode table.
     struct InodeTable {
-        ino_to_path: HashMap<u64, VfsPath>,
-        path_to_ino: HashMap<VfsPath, u64>,
+        ino_to_path: HashMap<u64, FvfsPath>,
+        path_to_ino: HashMap<FvfsPath, u64>,
         next_ino: u64,
     }
 
@@ -39,13 +39,13 @@ pub mod fuse_impl {
                 path_to_ino: HashMap::new(),
                 next_ino: 2, // 1 is root
             };
-            let root = VfsPath::new("/").unwrap();
+            let root = FvfsPath::new("/").unwrap();
             t.ino_to_path.insert(ROOT_INO, root.clone());
             t.path_to_ino.insert(root, ROOT_INO);
             t
         }
 
-        fn get_or_alloc(&mut self, path: VfsPath, hint_id: Option<u64>) -> u64 {
+        fn get_or_alloc(&mut self, path: FvfsPath, hint_id: Option<u64>) -> u64 {
             if let Some(&ino) = self.path_to_ino.get(&path) {
                 return ino;
             }
@@ -59,11 +59,11 @@ pub mod fuse_impl {
             ino
         }
 
-        fn path(&self, ino: u64) -> Option<&VfsPath> {
+        fn path(&self, ino: u64) -> Option<&FvfsPath> {
             self.ino_to_path.get(&ino)
         }
 
-        fn remove(&mut self, path: &VfsPath) {
+        fn remove(&mut self, path: &FvfsPath) {
             if let Some(ino) = self.path_to_ino.remove(path) {
                 self.ino_to_path.remove(&ino);
             }
@@ -270,8 +270,8 @@ pub mod fuse_impl {
                     let end = (start + size as usize).min(data.len());
                     reply.data(&data[start..end]);
                 }
-                Err(VfsError::NotFound { .. }) => reply.error(ENOENT),
-                Err(VfsError::IsADirectory { .. }) => reply.error(EISDIR),
+                Err(FvfsError::NotFound { .. }) => reply.error(ENOENT),
+                Err(FvfsError::IsADirectory { .. }) => reply.error(EISDIR),
                 Err(_) => reply.error(EIO),
             }
         }
@@ -438,7 +438,7 @@ pub mod fuse_impl {
                     self.inodes.lock().unwrap().remove(&child_path);
                     reply.ok();
                 }
-                Err(VfsError::NotFound { .. }) => reply.error(ENOENT),
+                Err(FvfsError::NotFound { .. }) => reply.error(ENOENT),
                 Err(_) => reply.error(EIO),
             }
         }

@@ -1,6 +1,6 @@
-/// FUSE handler for vfsc (optional — requires the `fuse` cargo feature).
+/// FUSE handler for fvfsc (optional — requires the `fuse` cargo feature).
 ///
-/// Proxies all POSIX syscalls to vfsd over HTTP. Read results are cached
+/// Proxies all POSIX syscalls to fvfsd over HTTP. Read results are cached
 /// locally by SHA-256 to avoid redundant fetches.
 #[cfg(feature = "fuse")]
 pub mod fuse_impl {
@@ -15,7 +15,7 @@ pub mod fuse_impl {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
     use tokio::runtime::Handle;
 
-    use fvfs_core::{EntryKind, FileMetadata, VfsError, VfsPath};
+    use fvfs_core::{EntryKind, FileMetadata, FvfsError, FvfsPath};
 
     use crate::http_client::VfsdClient;
     use crate::local_cache::LocalCache;
@@ -25,8 +25,8 @@ pub mod fuse_impl {
     const BLOCK_SIZE: u32 = 4096;
 
     struct InodeTable {
-        ino_to_path: HashMap<u64, VfsPath>,
-        path_to_ino: HashMap<VfsPath, u64>,
+        ino_to_path: HashMap<u64, FvfsPath>,
+        path_to_ino: HashMap<FvfsPath, u64>,
         next_ino: u64,
     }
 
@@ -37,13 +37,13 @@ pub mod fuse_impl {
                 path_to_ino: HashMap::new(),
                 next_ino: 2,
             };
-            let root = VfsPath::new("/").unwrap();
+            let root = FvfsPath::new("/").unwrap();
             t.ino_to_path.insert(ROOT_INO, root.clone());
             t.path_to_ino.insert(root, ROOT_INO);
             t
         }
 
-        fn get_or_alloc(&mut self, path: VfsPath) -> u64 {
+        fn get_or_alloc(&mut self, path: FvfsPath) -> u64 {
             if let Some(&ino) = self.path_to_ino.get(&path) {
                 return ino;
             }
@@ -54,11 +54,11 @@ pub mod fuse_impl {
             ino
         }
 
-        fn path(&self, ino: u64) -> Option<&VfsPath> {
+        fn path(&self, ino: u64) -> Option<&FvfsPath> {
             self.ino_to_path.get(&ino)
         }
 
-        fn remove(&mut self, path: &VfsPath) {
+        fn remove(&mut self, path: &FvfsPath) {
             if let Some(ino) = self.path_to_ino.remove(path) {
                 self.ino_to_path.remove(&ino);
             }
@@ -171,7 +171,7 @@ pub mod fuse_impl {
                     let ino = self.inodes.lock().unwrap().get_or_alloc(child_path);
                     reply.entry(&TTL, &self.meta_to_attr(ino, &meta), 0);
                 }
-                Err(VfsError::NotFound { .. }) => reply.error(ENOENT),
+                Err(FvfsError::NotFound { .. }) => reply.error(ENOENT),
                 Err(_) => reply.error(EIO),
             }
         }
@@ -190,7 +190,7 @@ pub mod fuse_impl {
             };
             match self.block_on(self.client.stat(&path)) {
                 Ok(meta) => reply.attr(&TTL, &self.meta_to_attr(ino, &meta)),
-                Err(VfsError::NotFound { .. }) => reply.error(ENOENT),
+                Err(FvfsError::NotFound { .. }) => reply.error(ENOENT),
                 Err(_) => reply.error(EIO),
             }
         }
@@ -236,8 +236,8 @@ pub mod fuse_impl {
                         self.rt.spawn(async move { cache.put(&d_clone).await; });
                         d
                     }
-                    Err(VfsError::NotFound { .. }) => { reply.error(ENOENT); return; }
-                    Err(VfsError::IsADirectory { .. }) => { reply.error(EISDIR); return; }
+                    Err(FvfsError::NotFound { .. }) => { reply.error(ENOENT); return; }
+                    Err(FvfsError::IsADirectory { .. }) => { reply.error(EISDIR); return; }
                     Err(_) => { reply.error(EIO); return; }
                 }
             };

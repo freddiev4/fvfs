@@ -1,5 +1,5 @@
 [workspace]
-members = ["fvfs-core", "vfsd", "vfsc"]
+members = ["fvfs-core", "fvfsd", "fvfsc"]
 resolver = "2"
 
 [workspace.package]

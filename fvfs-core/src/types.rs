@@ -2,18 +2,18 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::error::{Result, VfsError};
+use crate::error::{Result, FvfsError};
 
 /// A normalized, absolute, unix-style virtual filesystem path.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
-pub struct VfsPath(String);
+pub struct FvfsPath(String);
 
-impl VfsPath {
-    /// Create a new VfsPath, normalizing and validating the input.
+impl FvfsPath {
+    /// Create a new FvfsPath, normalizing and validating the input.
     pub fn new(raw: impl Into<String>) -> Result<Self> {
         let s = raw.into();
         let normalized = Self::normalize(&s)?;
-        Ok(VfsPath(normalized))
+        Ok(FvfsPath(normalized))
     }
 
     /// Get the raw path string.
@@ -22,15 +22,15 @@ impl VfsPath {
     }
 
     /// Parent path. Returns None for root "/".
-    pub fn parent(&self) -> Option<VfsPath> {
+    pub fn parent(&self) -> Option<FvfsPath> {
         if self.0 == "/" {
             return None;
         }
         let idx = self.0.rfind('/')?;
         if idx == 0 {
-            Some(VfsPath("/".to_string()))
+            Some(FvfsPath("/".to_string()))
         } else {
-            Some(VfsPath(self.0[..idx].to_string()))
+            Some(FvfsPath(self.0[..idx].to_string()))
         }
     }
 
@@ -43,7 +43,7 @@ impl VfsPath {
     }
 
     /// Check whether this path is a prefix of (or equal to) `other`.
-    pub fn is_prefix_of(&self, other: &VfsPath) -> bool {
+    pub fn is_prefix_of(&self, other: &FvfsPath) -> bool {
         if self.0 == "/" {
             return true;
         }
@@ -53,18 +53,18 @@ impl VfsPath {
     }
 
     /// Join a path segment.
-    pub fn join(&self, segment: &str) -> Result<VfsPath> {
+    pub fn join(&self, segment: &str) -> Result<FvfsPath> {
         let raw = if self.0 == "/" {
             format!("/{}", segment)
         } else {
             format!("{}/{}", self.0, segment)
         };
-        VfsPath::new(raw)
+        FvfsPath::new(raw)
     }
 
     fn normalize(s: &str) -> Result<String> {
         if s.is_empty() {
-            return Err(VfsError::InvalidPath("path cannot be empty".into()));
+            return Err(FvfsError::InvalidPath("path cannot be empty".into()));
         }
         // Ensure absolute path
         let s = if s.starts_with('/') {
@@ -83,7 +83,7 @@ impl VfsPath {
                 }
                 c => {
                     if c.contains('\0') {
-                        return Err(VfsError::InvalidPath(
+                        return Err(FvfsError::InvalidPath(
                             "path cannot contain null bytes".into(),
                         ));
                     }
@@ -100,14 +100,14 @@ impl VfsPath {
     }
 }
 
-impl fmt::Display for VfsPath {
+impl fmt::Display for FvfsPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl From<VfsPath> for String {
-    fn from(p: VfsPath) -> Self {
+impl From<FvfsPath> for String {
+    fn from(p: FvfsPath) -> Self {
         p.0
     }
 }
@@ -219,7 +219,7 @@ pub enum EntryKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileMetadata {
     pub id: i64,
-    pub path: VfsPath,
+    pub path: FvfsPath,
     pub kind: EntryKind,
     pub size_bytes: u64,
     pub sha256: String,
@@ -232,7 +232,7 @@ pub struct FileMetadata {
 }
 
 impl FileMetadata {
-    pub fn new_file(path: VfsPath, size_bytes: u64, sha256: String) -> Self {
+    pub fn new_file(path: FvfsPath, size_bytes: u64, sha256: String) -> Self {
         let now = now_unix();
         FileMetadata {
             id: 0,
@@ -249,7 +249,7 @@ impl FileMetadata {
         }
     }
 
-    pub fn new_dir(path: VfsPath) -> Self {
+    pub fn new_dir(path: FvfsPath) -> Self {
         let now = now_unix();
         FileMetadata {
             id: 0,
@@ -278,7 +278,7 @@ impl FileMetadata {
 /// Lightweight listing entry returned by `list` operations.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileEntry {
-    pub path: VfsPath,
+    pub path: FvfsPath,
     pub kind: EntryKind,
     pub size_bytes: u64,
     pub modified_at: i64,
@@ -318,12 +318,12 @@ impl WalOp {
 }
 
 impl TryFrom<&str> for WalOp {
-    type Error = VfsError;
+    type Error = FvfsError;
     fn try_from(s: &str) -> Result<Self> {
         match s {
             "replicate_nas" => Ok(WalOp::ReplicateNas),
             "upload_s3" => Ok(WalOp::UploadS3),
-            other => Err(VfsError::Wal(format!("unknown WAL op: {other}"))),
+            other => Err(FvfsError::Wal(format!("unknown WAL op: {other}"))),
         }
     }
 }

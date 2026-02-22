@@ -1,25 +1,25 @@
 # fvfs example configuration
-# Copy to /etc/vfsd/config.toml and adjust for your environment.
+# Copy to /etc/fvfsd/config.toml and adjust for your environment.
 
 [daemon]
-mount_path = "/mnt/vfs"
+mount_path = "/mnt/fvfs"
 http_port  = 7734
-metadata_db = "/var/vfsd/meta.db"
+metadata_db = "/var/fvfsd/meta.db"
 
 [tiers.local]
-path             = "/Users/freddie/vfs-cache"   # Mac mini hot-tier
+path             = "/Users/freddie/fvfs-cache"   # Mac mini hot-tier
 high_watermark_gb = 200
 low_watermark_gb  = 150
 
 [tiers.nas]
-path             = "/Volumes/NAS/vfs"           # NAS mounted via SMB/NFS
+path             = "/Volumes/NAS/fvfs"           # NAS mounted via SMB/NFS
 high_watermark_gb = 2000
 low_watermark_gb  = 1500
 
 [tiers.s3]
-bucket = "freddie-vfs"
+bucket = "freddie-fvfs"
 region = "us-east-1"
-prefix = "vfs/"                                 # all VFS objects live under this prefix
+prefix = "fvfs/"                                 # all FVFS objects live under this prefix
 
 [upload]
 flush_size_mb      = 256    # flush to S3 when accumulated data exceeds 256 MB
@@ -31,7 +31,7 @@ recency_weight   = 0.7      # weight for seconds-since-last-access term
 frequency_weight = 0.3      # weight for 30-day access count term
 
 [client]
-# vfsc only — ignored by vfsd
-mount_path       = "/mnt/vfs"
-local_cache_path = "/tmp/vfsc-cache"
+# fvfsc only — ignored by fvfsd
+mount_path       = "/mnt/fvfs"
+local_cache_path = "/tmp/fvfsc-cache"
 local_cache_gb   = 20

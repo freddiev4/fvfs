@@ -1,4 +1,4 @@
-/// Axum HTTP API for vfsd.
+/// Axum HTTP API for fvfsd.
 ///
 /// Routes:
 ///   GET    /v1/files/*path         - read file
@@ -25,7 +25,7 @@ use tokio::sync::Notify;
 use tracing::instrument;
 
 use fvfs_core::metadata::MetadataStore;
-use fvfs_core::{DaemonStatus, DeviceInfo, FileEntry, TierStats, VfsError, VfsPath, WalEntry};
+use fvfs_core::{DaemonStatus, DeviceInfo, FileEntry, TierStats, FvfsError, FvfsPath, WalEntry};
 
 use crate::router::TierRouter;
 
@@ -62,28 +62,28 @@ pub type SharedState = Arc<AppState>;
 // ---------------------------------------------------------------------------
 // Error response helper
 
-struct ApiError(VfsError);
+struct ApiError(FvfsError);
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, message) = match &self.0 {
-            VfsError::NotFound { path } => (
+            FvfsError::NotFound { path } => (
                 StatusCode::NOT_FOUND,
                 format!("not found: {}", path),
             ),
-            VfsError::AlreadyExists { path } => (
+            FvfsError::AlreadyExists { path } => (
                 StatusCode::CONFLICT,
                 format!("already exists: {}", path),
             ),
-            VfsError::IsADirectory { path } => (
+            FvfsError::IsADirectory { path } => (
                 StatusCode::BAD_REQUEST,
                 format!("is a directory: {}", path),
             ),
-            VfsError::NotADirectory { path } => (
+            FvfsError::NotADirectory { path } => (
                 StatusCode::BAD_REQUEST,
                 format!("not a directory: {}", path),
             ),
-            VfsError::PermissionDenied(msg) => (StatusCode::FORBIDDEN, msg.clone()),
+            FvfsError::PermissionDenied(msg) => (StatusCode::FORBIDDEN, msg.clone()),
             _ => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 self.0.to_string(),
@@ -93,8 +93,8 @@ impl IntoResponse for ApiError {
     }
 }
 
-impl From<VfsError> for ApiError {
-    fn from(e: VfsError) -> Self {
+impl From<FvfsError> for ApiError {
+    fn from(e: FvfsError) -> Self {
         ApiError(e)
     }
 }
@@ -184,13 +184,13 @@ async fn handle_list(
 async fn handle_list_root(
     State(state): State<SharedState>,
 ) -> Result<Json<Vec<FileEntry>>, ApiError> {
-    let vfs_path = VfsPath::new("/").map_err(ApiError::from)?;
+    let vfs_path = FvfsPath::new("/").map_err(ApiError::from)?;
     list_entries(state, vfs_path).await
 }
 
 async fn list_entries(
     state: SharedState,
-    path: VfsPath,
+    path: FvfsPath,
 ) -> Result<Json<Vec<FileEntry>>, ApiError> {
     let entries = state.router.list(&path).await?;
     Ok(Json(entries))
@@ -297,7 +297,7 @@ async fn handle_devices(State(state): State<SharedState>) -> Result<Json<Vec<Dev
     let meta = state.meta.clone();
     let devices = tokio::task::spawn_blocking(move || meta.list_devices())
         .await
-        .map_err(|e| ApiError(VfsError::Other(anyhow::anyhow!("{e}"))))?
+        .map_err(|e| ApiError(FvfsError::Other(anyhow::anyhow!("{e}"))))?
         .map_err(ApiError::from)?;
     Ok(Json(devices))
 }
@@ -321,7 +321,7 @@ async fn handle_admin_wal(
     let meta = state.meta.clone();
     let entries = tokio::task::spawn_blocking(move || meta.wal_pending())
         .await
-        .map_err(|e| ApiError(VfsError::Other(anyhow::anyhow!("{e}"))))?
+        .map_err(|e| ApiError(FvfsError::Other(anyhow::anyhow!("{e}"))))?
         .map_err(ApiError::from)?;
     Ok(Json(entries))
 }
@@ -329,6 +329,6 @@ async fn handle_admin_wal(
 // ---------------------------------------------------------------------------
 // Path helper
 
-fn parse_path(raw: &str) -> Result<VfsPath, ApiError> {
-    VfsPath::new(format!("/{}", raw.trim_start_matches('/'))).map_err(ApiError::from)
+fn parse_path(raw: &str) -> Result<FvfsPath, ApiError> {
+    FvfsPath::new(format!("/{}", raw.trim_start_matches('/'))).map_err(ApiError::from)
 }

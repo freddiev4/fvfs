@@ -31,10 +31,10 @@ use crate::s3_uploader::run_s3_uploader;
 // CLI
 
 #[derive(Parser)]
-#[command(name = "vfsd", about = "fvfs daemon — distributed VFS for the Mac mini")]
+#[command(name = "fvfsd", about = "fvfs daemon — distributed FVFS for the Mac mini")]
 struct Cli {
     /// Path to the TOML configuration file.
-    #[arg(short, long, default_value = "/etc/vfsd/config.toml")]
+    #[arg(short, long, default_value = "/etc/fvfsd/config.toml")]
     config: PathBuf,
 
     #[command(subcommand)]
@@ -46,7 +46,7 @@ enum Command {
     /// Start the daemon (FUSE mount + HTTP API + background tasks).
     Serve,
 
-    /// Migrate existing data from local disk and NAS into the VFS.
+    /// Migrate existing data from local disk and NAS into the FVFS.
     Migrate {
         /// Source path on the Mac mini local disk.
         #[arg(long)]
@@ -56,9 +56,9 @@ enum Command {
         nas_src: Option<PathBuf>,
     },
 
-    /// Print daemon status (connects to a running vfsd over HTTP).
+    /// Print daemon status (connects to a running fvfsd over HTTP).
     Status {
-        /// vfsd HTTP address (default: http://localhost:7734).
+        /// fvfsd HTTP address (default: http://localhost:7734).
         #[arg(long, default_value = "http://localhost:7734")]
         url: String,
     },
@@ -70,7 +70,7 @@ enum Command {
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive("vfsd=info".parse().unwrap()))
+        .with_env_filter(EnvFilter::from_default_env().add_directive("fvfsd=info".parse().unwrap()))
         .init();
 
     let cli = Cli::parse();
@@ -93,7 +93,7 @@ async fn main() {
 // Serve
 
 async fn run_serve(cfg: Config) {
-    info!("vfsd starting up");
+    info!("fvfsd starting up");
 
     // Create storage directories.
     tokio::fs::create_dir_all(&cfg.tiers.local.path)
@@ -230,7 +230,7 @@ async fn run_serve(cfg: Config) {
             let fs = VfsdFuse::new(router_fuse, meta_fuse, rt);
             let options = vec![
                 fuser::MountOption::RW,
-                fuser::MountOption::FSName("vfsd".into()),
+                fuser::MountOption::FSName("fvfsd".into()),
                 fuser::MountOption::AutoUnmount,
             ];
             if let Err(e) = fuser::mount2(fs, &mount_path, &options) {
@@ -301,7 +301,7 @@ async fn run_status(url: String) {
         Ok(resp) => {
             match resp.json::<fvfs_core::DaemonStatus>().await {
                 Ok(status) => {
-                    println!("vfsd v{} — uptime {}s", status.version, status.uptime_secs);
+                    println!("fvfsd v{} — uptime {}s", status.version, status.uptime_secs);
                     for tier in &status.tiers {
                         println!(
                             "  {} : {} files, {} MB",
@@ -315,6 +315,6 @@ async fn run_status(url: String) {
                 Err(e) => eprintln!("Failed to parse status response: {e}"),
             }
         }
-        Err(e) => eprintln!("Failed to reach vfsd at {status_url}: {e}"),
+        Err(e) => eprintln!("Failed to reach fvfsd at {status_url}: {e}"),
     }
 }

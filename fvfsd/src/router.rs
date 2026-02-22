@@ -19,13 +19,13 @@ use tracing::{info, instrument, warn};
 use fvfs_core::backend::StorageBackend;
 use fvfs_core::metadata::MetadataStore;
 use fvfs_core::{
-    now_unix, EntryKind, FileEntry, FileMetadata, Result, Tier, TierBitmask, VfsError, VfsPath,
+    now_unix, EntryKind, FileEntry, FileMetadata, Result, Tier, TierBitmask, FvfsError, FvfsPath,
     WalOp,
 };
 
 /// Signals sent to the background promotion task.
 pub enum PromoteSignal {
-    Promote { path: VfsPath, from: Tier },
+    Promote { path: FvfsPath, from: Tier },
 }
 
 pub struct TierRouter {
@@ -40,10 +40,10 @@ impl TierRouter {
     // -----------------------------------------------------------------------
     // Writes
 
-    /// Write `data` to the VFS at `path`. Completes once the local disk write
+    /// Write `data` to the FVFS at `path`. Completes once the local disk write
     /// and SQLite upsert are done; NAS and S3 replications are enqueued.
     #[instrument(skip(self, data), fields(path = %path, bytes = data.len()))]
-    pub async fn write(&self, path: &VfsPath, data: Bytes) -> Result<()> {
+    pub async fn write(&self, path: &FvfsPath, data: Bytes) -> Result<()> {
         // Compute sha256
         let sha256 = {
             let mut h = Sha256::new();
@@ -79,7 +79,7 @@ impl TierRouter {
         let meta_clone = meta.clone();
         let file_id = tokio::task::spawn_blocking(move || meta_store.upsert(&meta_clone))
             .await
-            .map_err(|e| VfsError::Other(anyhow::anyhow!("spawn_blocking: {e}")))??;
+            .map_err(|e| FvfsError::Other(anyhow::anyhow!("spawn_blocking: {e}")))??;
         meta.id = file_id;
 
         // Ensure parent directories exist in metadata
@@ -90,28 +90,28 @@ impl TierRouter {
         tokio::task::spawn_blocking(move || {
             meta_store2.wal_enqueue(file_id, &WalOp::ReplicateNas)?;
             meta_store2.wal_enqueue(file_id, &WalOp::UploadS3)?;
-            Ok::<_, VfsError>(())
+            Ok::<_, FvfsError>(())
         })
         .await
-        .map_err(|e| VfsError::Other(anyhow::anyhow!("spawn_blocking: {e}")))??;
+        .map_err(|e| FvfsError::Other(anyhow::anyhow!("spawn_blocking: {e}")))??;
 
         info!(path = %path, file_id = file_id, "write complete, WAL enqueued");
         Ok(())
     }
 
     /// Create a directory entry.
-    pub async fn mkdir(&self, path: &VfsPath) -> Result<()> {
+    pub async fn mkdir(&self, path: &FvfsPath) -> Result<()> {
         let meta = FileMetadata::new_dir(path.clone());
         let meta_store = self.meta.clone();
         tokio::task::spawn_blocking(move || meta_store.upsert(&meta))
             .await
-            .map_err(|e| VfsError::Other(anyhow::anyhow!("spawn_blocking: {e}")))??;
+            .map_err(|e| FvfsError::Other(anyhow::anyhow!("spawn_blocking: {e}")))??;
         self.ensure_parent_dirs(path).await?;
         Ok(())
     }
 
     /// Ensure all ancestor directories are present in the metadata store.
-    async fn ensure_parent_dirs(&self, path: &VfsPath) -> Result<()> {
+    async fn ensure_parent_dirs(&self, path: &FvfsPath) -> Result<()> {
         let mut current = path.clone();
         loop {
             match current.parent() {
@@ -121,13 +121,13 @@ impl TierRouter {
                     let parent_clone = parent.clone();
                     let existing = tokio::task::spawn_blocking(move || meta_store.get(&parent_clone))
                         .await
-                        .map_err(|e| VfsError::Other(anyhow::anyhow!("{e}")))??;
+                        .map_err(|e| FvfsError::Other(anyhow::anyhow!("{e}")))??;
                     if existing.is_none() {
                         let dir_meta = FileMetadata::new_dir(parent.clone());
                         let meta_store2 = self.meta.clone();
                         tokio::task::spawn_blocking(move || meta_store2.upsert(&dir_meta))
                             .await
-                            .map_err(|e| VfsError::Other(anyhow::anyhow!("{e}")))??;
+                            .map_err(|e| FvfsError::Other(anyhow::anyhow!("{e}")))??;
                     }
                     current = parent;
                 }
@@ -141,11 +141,11 @@ impl TierRouter {
 
     /// Read `path`, serving from the fastest available tier.
     #[instrument(skip(self), fields(path = %path))]
-    pub async fn read(&self, path: &VfsPath) -> Result<Bytes> {
+    pub async fn read(&self, path: &FvfsPath) -> Result<Bytes> {
         let meta = self.require_metadata(path).await?;
 
         if meta.is_dir() {
-            return Err(VfsError::IsADirectory {
+            return Err(FvfsError::IsADirectory {
                 path: path.to_string(),
             });
         }
@@ -182,7 +182,7 @@ impl TierRouter {
                 .ok();
             data
         } else {
-            return Err(VfsError::NotFound {
+            return Err(FvfsError::NotFound {
                 path: path.to_string(),
             });
         };
@@ -196,7 +196,7 @@ impl TierRouter {
         Ok(data)
     }
 
-    async fn read_from_nas_or_s3(&self, path: &VfsPath, bm: &TierBitmask) -> Result<Bytes> {
+    async fn read_from_nas_or_s3(&self, path: &FvfsPath, bm: &TierBitmask) -> Result<Bytes> {
         if bm.has(Tier::Nas) {
             let data = self.nas.get(path).await?;
             self.promote_tx
@@ -216,7 +216,7 @@ impl TierRouter {
                 .ok();
             Ok(data)
         } else {
-            Err(VfsError::NotFound {
+            Err(FvfsError::NotFound {
                 path: path.to_string(),
             })
         }
@@ -226,7 +226,7 @@ impl TierRouter {
     // Delete
 
     #[instrument(skip(self), fields(path = %path))]
-    pub async fn delete(&self, path: &VfsPath) -> Result<()> {
+    pub async fn delete(&self, path: &FvfsPath) -> Result<()> {
         let meta = self.require_metadata(path).await?;
         let bm = meta.tier_bitmask;
 
@@ -251,7 +251,7 @@ impl TierRouter {
 
         for task in tasks {
             task.await
-                .map_err(|e| VfsError::Other(anyhow::anyhow!("{e}")))?
+                .map_err(|e| FvfsError::Other(anyhow::anyhow!("{e}")))?
                 .ok(); // best-effort
         }
 
@@ -260,7 +260,7 @@ impl TierRouter {
         let path_clone = path.clone();
         tokio::task::spawn_blocking(move || meta_store.delete(&path_clone))
             .await
-            .map_err(|e| VfsError::Other(anyhow::anyhow!("{e}")))??;
+            .map_err(|e| FvfsError::Other(anyhow::anyhow!("{e}")))??;
 
         Ok(())
     }
@@ -268,26 +268,26 @@ impl TierRouter {
     // -----------------------------------------------------------------------
     // Metadata / listing
 
-    pub async fn stat(&self, path: &VfsPath) -> Result<FileMetadata> {
+    pub async fn stat(&self, path: &FvfsPath) -> Result<FileMetadata> {
         self.require_metadata(path).await
     }
 
-    pub async fn list(&self, dir_path: &VfsPath) -> Result<Vec<FileEntry>> {
+    pub async fn list(&self, dir_path: &FvfsPath) -> Result<Vec<FileEntry>> {
         let meta_store = self.meta.clone();
         let dir_clone = dir_path.clone();
         let entries = tokio::task::spawn_blocking(move || meta_store.list_dir(&dir_clone))
             .await
-            .map_err(|e| VfsError::Other(anyhow::anyhow!("{e}")))??;
+            .map_err(|e| FvfsError::Other(anyhow::anyhow!("{e}")))??;
         Ok(entries.iter().map(FileEntry::from).collect())
     }
 
-    async fn require_metadata(&self, path: &VfsPath) -> Result<FileMetadata> {
+    async fn require_metadata(&self, path: &FvfsPath) -> Result<FileMetadata> {
         let meta_store = self.meta.clone();
         let path_clone = path.clone();
         let meta = tokio::task::spawn_blocking(move || meta_store.get(&path_clone))
             .await
-            .map_err(|e| VfsError::Other(anyhow::anyhow!("{e}")))??;
-        meta.ok_or_else(|| VfsError::NotFound {
+            .map_err(|e| FvfsError::Other(anyhow::anyhow!("{e}")))??;
+        meta.ok_or_else(|| FvfsError::NotFound {
             path: path.to_string(),
         })
     }
@@ -296,10 +296,10 @@ impl TierRouter {
     // Eviction helpers
 
     /// Evict a file from a tier (remove local copy, keep metadata).
-    pub async fn evict_from_tier(&self, path: &VfsPath, tier: Tier) -> Result<()> {
+    pub async fn evict_from_tier(&self, path: &FvfsPath, tier: Tier) -> Result<()> {
         let meta = self.require_metadata(path).await?;
         if !meta.tier_bitmask.safe_to_evict_from(tier) {
-            return Err(VfsError::Other(anyhow::anyhow!(
+            return Err(FvfsError::Other(anyhow::anyhow!(
                 "cannot evict: file not present on colder tier"
             )));
         }
@@ -308,7 +308,7 @@ impl TierRouter {
             Tier::Local => self.local.clone(),
             Tier::Nas => self.nas.clone(),
             Tier::S3 => {
-                return Err(VfsError::Other(anyhow::anyhow!(
+                return Err(FvfsError::Other(anyhow::anyhow!(
                     "S3 tier is never evicted"
                 )));
             }
@@ -322,7 +322,7 @@ impl TierRouter {
         let file_id = meta.id;
         tokio::task::spawn_blocking(move || meta_store.set_tier_bitmask(file_id, bm))
             .await
-            .map_err(|e| VfsError::Other(anyhow::anyhow!("{e}")))??;
+            .map_err(|e| FvfsError::Other(anyhow::anyhow!("{e}")))??;
 
         Ok(())
     }

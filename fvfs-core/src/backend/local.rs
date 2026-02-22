@@ -6,8 +6,8 @@ use tokio::io::AsyncWriteExt;
 use tracing::{debug, instrument};
 
 use crate::backend::StorageBackend;
-use crate::error::{Result, VfsError};
-use crate::types::{EntryKind, FileEntry, Tier, VfsPath};
+use crate::error::{Result, FvfsError};
+use crate::types::{EntryKind, FileEntry, Tier, FvfsPath};
 
 /// StorageBackend backed by a local filesystem path (used for both the Mac
 /// mini hot tier and as a base for the NAS warm tier).
@@ -25,8 +25,8 @@ impl LocalDiskBackend {
         }
     }
 
-    /// Convert a VfsPath to a concrete filesystem path under `root`.
-    fn fs_path(&self, vfs_path: &VfsPath) -> PathBuf {
+    /// Convert a FvfsPath to a concrete filesystem path under `root`.
+    fn fs_path(&self, vfs_path: &FvfsPath) -> PathBuf {
         // Strip the leading '/' so it's relative, then join under root.
         let rel = vfs_path.as_str().trim_start_matches('/');
         self.root.join(rel)
@@ -36,7 +36,7 @@ impl LocalDiskBackend {
 #[async_trait]
 impl StorageBackend for LocalDiskBackend {
     #[instrument(skip(self, data), fields(tier = %self.tier, path = %path))]
-    async fn put(&self, path: &VfsPath, data: Bytes) -> Result<()> {
+    async fn put(&self, path: &FvfsPath, data: Bytes) -> Result<()> {
         let fs_path = self.fs_path(path);
         if let Some(parent) = fs_path.parent() {
             fs::create_dir_all(parent).await?;
@@ -49,15 +49,15 @@ impl StorageBackend for LocalDiskBackend {
     }
 
     #[instrument(skip(self), fields(tier = %self.tier, path = %path))]
-    async fn get(&self, path: &VfsPath) -> Result<Bytes> {
+    async fn get(&self, path: &FvfsPath) -> Result<Bytes> {
         let fs_path = self.fs_path(path);
         let data = fs::read(&fs_path).await.map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                VfsError::NotFound {
+                FvfsError::NotFound {
                     path: path.to_string(),
                 }
             } else {
-                VfsError::Io(e)
+                FvfsError::Io(e)
             }
         })?;
         debug!(tier = %self.tier, path = %path, bytes = data.len(), "get");
@@ -65,28 +65,28 @@ impl StorageBackend for LocalDiskBackend {
     }
 
     #[instrument(skip(self), fields(tier = %self.tier, path = %path))]
-    async fn delete(&self, path: &VfsPath) -> Result<()> {
+    async fn delete(&self, path: &FvfsPath) -> Result<()> {
         let fs_path = self.fs_path(path);
         fs::remove_file(&fs_path).await.map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                VfsError::NotFound {
+                FvfsError::NotFound {
                     path: path.to_string(),
                 }
             } else {
-                VfsError::Io(e)
+                FvfsError::Io(e)
             }
         })?;
         debug!(tier = %self.tier, path = %path, "delete");
         Ok(())
     }
 
-    async fn exists(&self, path: &VfsPath) -> Result<bool> {
+    async fn exists(&self, path: &FvfsPath) -> Result<bool> {
         let fs_path = self.fs_path(path);
         Ok(fs_path.exists())
     }
 
     #[instrument(skip(self), fields(tier = %self.tier, prefix = %prefix))]
-    async fn list(&self, prefix: &VfsPath) -> Result<Vec<FileEntry>> {
+    async fn list(&self, prefix: &FvfsPath) -> Result<Vec<FileEntry>> {
         let dir_path = self.fs_path(prefix);
         if !dir_path.exists() {
             return Ok(vec![]);
@@ -97,15 +97,15 @@ impl StorageBackend for LocalDiskBackend {
     }
 
     #[instrument(skip(self), fields(tier = %self.tier, path = %path))]
-    async fn metadata(&self, path: &VfsPath) -> Result<FileEntry> {
+    async fn metadata(&self, path: &FvfsPath) -> Result<FileEntry> {
         let fs_path = self.fs_path(path);
         let meta = fs::metadata(&fs_path).await.map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                VfsError::NotFound {
+                FvfsError::NotFound {
                     path: path.to_string(),
                 }
             } else {
-                VfsError::Io(e)
+                FvfsError::Io(e)
             }
         })?;
 
@@ -149,15 +149,15 @@ async fn collect_entries(
     while let Some(entry) = read_dir.next_entry().await? {
         let meta = entry.metadata().await?;
         let fs_path = entry.path();
-        // Convert back to a VfsPath by stripping the root prefix.
+        // Convert back to a FvfsPath by stripping the root prefix.
         let rel = fs_path
             .strip_prefix(root)
             .unwrap_or(&fs_path)
             .to_string_lossy()
             .to_string();
         let vfs_path_str = format!("/{}", rel.replace('\\', "/"));
-        let vfs_path = VfsPath::new(vfs_path_str).unwrap_or_else(|_| {
-            VfsPath::new("/unknown").unwrap()
+        let vfs_path = FvfsPath::new(vfs_path_str).unwrap_or_else(|_| {
+            FvfsPath::new("/unknown").unwrap()
         });
 
         let kind = if meta.is_dir() {

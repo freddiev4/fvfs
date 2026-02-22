@@ -17,7 +17,7 @@ use tracing::{info, warn};
 
 use fvfs_core::backend::StorageBackend;
 use fvfs_core::metadata::MetadataStore;
-use fvfs_core::types::{FileMetadata, Tier, TierBitmask, VfsPath};
+use fvfs_core::types::{FileMetadata, Tier, TierBitmask, FvfsPath};
 
 pub struct MigrateOptions {
     pub local_path: PathBuf,
@@ -119,16 +119,16 @@ pub async fn run_migration(opts: MigrateOptions) -> MigrateReport {
 
     // Upload to S3 and update metadata.
     for (root, file_path, tier, hash, size) in &to_upload {
-        // Derive VFS path from file path relative to root.
+        // Derive FVFS path from file path relative to root.
         let rel = file_path
             .strip_prefix(root)
             .unwrap_or(file_path)
             .to_string_lossy()
             .replace('\\', "/");
-        let vfs_path = match VfsPath::new(format!("/{}", rel)) {
+        let vfs_path = match FvfsPath::new(format!("/{}", rel)) {
             Ok(p) => p,
             Err(e) => {
-                warn!(path = %file_path.display(), err = %e, "invalid VFS path");
+                warn!(path = %file_path.display(), err = %e, "invalid FVFS path");
                 errors.fetch_add(1, Ordering::Relaxed);
                 continue;
             }

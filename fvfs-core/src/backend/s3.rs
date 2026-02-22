@@ -5,8 +5,8 @@ use bytes::Bytes;
 use tracing::{debug, instrument};
 
 use crate::backend::StorageBackend;
-use crate::error::{Result, VfsError};
-use crate::types::{EntryKind, FileEntry, Tier, TierBitmask, VfsPath};
+use crate::error::{Result, FvfsError};
+use crate::types::{EntryKind, FileEntry, Tier, TierBitmask, FvfsPath};
 
 /// S3 cold-tier backend — the source of truth. Data here is never evicted.
 #[derive(Clone)]
@@ -30,8 +30,8 @@ impl S3Backend {
         })
     }
 
-    /// Convert a VfsPath to an S3 object key.
-    fn s3_key(&self, path: &VfsPath) -> String {
+    /// Convert a FvfsPath to an S3 object key.
+    fn s3_key(&self, path: &FvfsPath) -> String {
         let rel = path.as_str().trim_start_matches('/');
         if self.prefix.is_empty() {
             rel.to_string()
@@ -44,7 +44,7 @@ impl S3Backend {
 #[async_trait]
 impl StorageBackend for S3Backend {
     #[instrument(skip(self, data), fields(tier = "s3", path = %path))]
-    async fn put(&self, path: &VfsPath, data: Bytes) -> Result<()> {
+    async fn put(&self, path: &FvfsPath, data: Bytes) -> Result<()> {
         let key = self.s3_key(path);
         let len = data.len() as i64;
         debug!(bucket = %self.bucket, key = %key, bytes = len, "s3 put");
@@ -56,12 +56,12 @@ impl StorageBackend for S3Backend {
             .body(ByteStream::from(data))
             .send()
             .await
-            .map_err(|e| VfsError::S3(format!("put_object: {e}")))?;
+            .map_err(|e| FvfsError::S3(format!("put_object: {e}")))?;
         Ok(())
     }
 
     #[instrument(skip(self), fields(tier = "s3", path = %path))]
-    async fn get(&self, path: &VfsPath) -> Result<Bytes> {
+    async fn get(&self, path: &FvfsPath) -> Result<Bytes> {
         let key = self.s3_key(path);
         debug!(bucket = %self.bucket, key = %key, "s3 get");
         let resp = self
@@ -74,11 +74,11 @@ impl StorageBackend for S3Backend {
             .map_err(|e| {
                 // Map NoSuchKey to NotFound
                 if e.to_string().contains("NoSuchKey") || e.to_string().contains("404") {
-                    VfsError::NotFound {
+                    FvfsError::NotFound {
                         path: path.to_string(),
                     }
                 } else {
-                    VfsError::S3(format!("get_object: {e}"))
+                    FvfsError::S3(format!("get_object: {e}"))
                 }
             })?;
 
@@ -86,12 +86,12 @@ impl StorageBackend for S3Backend {
             .body
             .collect()
             .await
-            .map_err(|e| VfsError::S3(format!("collecting body: {e}")))?;
+            .map_err(|e| FvfsError::S3(format!("collecting body: {e}")))?;
         Ok(body.into_bytes())
     }
 
     #[instrument(skip(self), fields(tier = "s3", path = %path))]
-    async fn delete(&self, path: &VfsPath) -> Result<()> {
+    async fn delete(&self, path: &FvfsPath) -> Result<()> {
         let key = self.s3_key(path);
         debug!(bucket = %self.bucket, key = %key, "s3 delete");
         self.client
@@ -100,11 +100,11 @@ impl StorageBackend for S3Backend {
             .key(&key)
             .send()
             .await
-            .map_err(|e| VfsError::S3(format!("delete_object: {e}")))?;
+            .map_err(|e| FvfsError::S3(format!("delete_object: {e}")))?;
         Ok(())
     }
 
-    async fn exists(&self, path: &VfsPath) -> Result<bool> {
+    async fn exists(&self, path: &FvfsPath) -> Result<bool> {
         let key = self.s3_key(path);
         match self
             .client
@@ -120,14 +120,14 @@ impl StorageBackend for S3Backend {
                 if s.contains("NoSuchKey") || s.contains("404") {
                     Ok(false)
                 } else {
-                    Err(VfsError::S3(format!("head_object: {e}")))
+                    Err(FvfsError::S3(format!("head_object: {e}")))
                 }
             }
         }
     }
 
     #[instrument(skip(self), fields(tier = "s3", prefix = %prefix))]
-    async fn list(&self, prefix: &VfsPath) -> Result<Vec<FileEntry>> {
+    async fn list(&self, prefix: &FvfsPath) -> Result<Vec<FileEntry>> {
         let key_prefix = self.s3_key(prefix);
         let prefix_str = if key_prefix == "/" || key_prefix.is_empty() {
             self.prefix.clone()
@@ -150,11 +150,11 @@ impl StorageBackend for S3Backend {
             let resp = req
                 .send()
                 .await
-                .map_err(|e| VfsError::S3(format!("list_objects_v2: {e}")))?;
+                .map_err(|e| FvfsError::S3(format!("list_objects_v2: {e}")))?;
 
             for obj in resp.contents() {
                 if let Some(key) = obj.key() {
-                    // Strip the backend prefix to get back the VFS path.
+                    // Strip the backend prefix to get back the FVFS path.
                     let rel = if self.prefix.is_empty() {
                         key.to_string()
                     } else {
@@ -163,8 +163,8 @@ impl StorageBackend for S3Backend {
                             .trim_start_matches('/')
                             .to_string()
                     };
-                    let vfs_path = VfsPath::new(format!("/{}", rel))
-                        .unwrap_or_else(|_| VfsPath::new("/unknown").unwrap());
+                    let vfs_path = FvfsPath::new(format!("/{}", rel))
+                        .unwrap_or_else(|_| FvfsPath::new("/unknown").unwrap());
                     let modified_at = obj
                         .last_modified()
                         .and_then(|t| t.secs().try_into().ok())
@@ -192,7 +192,7 @@ impl StorageBackend for S3Backend {
     }
 
     #[instrument(skip(self), fields(tier = "s3", path = %path))]
-    async fn metadata(&self, path: &VfsPath) -> Result<FileEntry> {
+    async fn metadata(&self, path: &FvfsPath) -> Result<FileEntry> {
         let key = self.s3_key(path);
         let resp = self
             .client
@@ -204,11 +204,11 @@ impl StorageBackend for S3Backend {
             .map_err(|e| {
                 let s = e.to_string();
                 if s.contains("NoSuchKey") || s.contains("404") {
-                    VfsError::NotFound {
+                    FvfsError::NotFound {
                         path: path.to_string(),
                     }
                 } else {
-                    VfsError::S3(format!("head_object: {e}"))
+                    FvfsError::S3(format!("head_object: {e}"))
                 }
             })?;
 

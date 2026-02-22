@@ -1,15 +1,15 @@
-/// mDNS/DNS-SD registration for vfsd.
+/// mDNS/DNS-SD registration for fvfsd.
 ///
-/// Registers the service `_vfs._tcp.local.` pointing to port 7734.
+/// Registers the service `_fvfs._tcp.local.` pointing to port 7734.
 /// Client devices browse for this service to discover the daemon.
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use tracing::{error, info};
 
-const SERVICE_TYPE: &str = "_vfs._tcp.local.";
+const SERVICE_TYPE: &str = "_fvfs._tcp.local.";
 
 pub async fn register_mdns(port: u16) {
     let hostname = get_hostname();
-    let instance_name = format!("vfsd-{}", hostname);
+    let instance_name = format!("fvfsd-{}", hostname);
 
     let mdns = match ServiceDaemon::new() {
         Ok(d) => d,
@@ -61,5 +61,5 @@ fn get_hostname() -> String {
     hostname::get()
         .ok()
         .and_then(|h| h.into_string().ok())
-        .unwrap_or_else(|| "vfsd".to_string())
+        .unwrap_or_else(|| "fvfsd".to_string())
 }
