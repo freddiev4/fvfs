@@ -1,11 +1,9 @@
-mod eviction_task;
-mod fuse_handler;
-mod http_api;
-mod mdns_server;
-mod migrate;
-mod router;
-mod s3_uploader;
-mod wal_replay;
+// All module declarations live in lib.rs; import them here.
+use fvfsd::eviction_task::{TierWatermarks, run_eviction};
+use fvfsd::http_api::{AppState, build_router};
+use fvfsd::router::{PromoteSignal, TierRouter};
+use fvfsd::s3_uploader::run_s3_uploader;
+use fvfsd::{migrate, mdns_server, wal_replay};
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -21,11 +19,6 @@ use fvfs_core::backend::s3::S3Backend;
 use fvfs_core::config::Config;
 use fvfs_core::metadata::MetadataStore;
 use fvfs_core::Tier;
-
-use crate::eviction_task::{TierWatermarks, run_eviction};
-use crate::http_api::{AppState, build_router};
-use crate::router::{PromoteSignal, TierRouter};
-use crate::s3_uploader::run_s3_uploader;
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -48,17 +41,14 @@ enum Command {
 
     /// Migrate existing data from local disk and NAS into the FVFS.
     Migrate {
-        /// Source path on the Mac mini local disk.
         #[arg(long)]
         local_src: Option<PathBuf>,
-        /// Source path on the NAS.
         #[arg(long)]
         nas_src: Option<PathBuf>,
     },
 
     /// Print daemon status (connects to a running fvfsd over HTTP).
     Status {
-        /// fvfsd HTTP address (default: http://localhost:7734).
         #[arg(long, default_value = "http://localhost:7734")]
         url: String,
     },
@@ -95,7 +85,6 @@ async fn main() {
 async fn run_serve(cfg: Config) {
     info!("fvfsd starting up");
 
-    // Create storage directories.
     tokio::fs::create_dir_all(&cfg.tiers.local.path)
         .await
         .expect("create local tier dir");
@@ -108,10 +97,8 @@ async fn run_serve(cfg: Config) {
     .await
     .ok();
 
-    // Open metadata store.
     let meta = MetadataStore::open(&cfg.daemon.metadata_db).expect("open metadata db");
 
-    // Build storage backends.
     let local_backend = Arc::new(LocalDiskBackend::new(&cfg.tiers.local.path, Tier::Local));
     let nas_backend = Arc::new(new_nas_backend(&cfg.tiers.nas.path));
     let s3_backend = Arc::new(
@@ -124,21 +111,18 @@ async fn run_serve(cfg: Config) {
         .expect("init S3 backend"),
     );
 
-    // Promotion channel: background task reads blocks from NAS/S3 and writes to local.
     let (promote_tx, mut promote_rx) = mpsc::unbounded_channel::<PromoteSignal>();
-
     let evict_notify = Arc::new(Notify::new());
     let flush_notify = Arc::new(Notify::new());
 
     let router = Arc::new(TierRouter {
         local: local_backend,
         nas: nas_backend,
-        s3: s3_backend.clone(),
+        s3: s3_backend,
         meta: meta.clone(),
         promote_tx,
     });
 
-    // WAL replay before serving.
     info!("Replaying WAL");
     wal_replay::replay_wal(router.clone(), meta.clone()).await;
 
@@ -152,14 +136,19 @@ async fn run_serve(cfg: Config) {
                     if let Err(e) = router.local.put(&path, data).await {
                         tracing::warn!(path = %path, from = %from, err = %e, "promotion failed");
                     } else {
-                        // Update local bitmask.
                         let m = router.meta.clone();
                         let p = path.clone();
-                        if let Ok(Some(meta)) = tokio::task::spawn_blocking(move || m.get(&p)).await.unwrap_or(Ok(None)) {
+                        if let Ok(Some(meta)) =
+                            tokio::task::spawn_blocking(move || m.get(&p))
+                                .await
+                                .unwrap_or(Ok(None))
+                        {
                             let mut bm = meta.tier_bitmask;
                             bm.set(Tier::Local);
                             let m2 = router.meta.clone();
-                            let _ = tokio::task::spawn_blocking(move || m2.set_tier_bitmask(meta.id, bm)).await;
+                            let _ =
+                                tokio::task::spawn_blocking(move || m2.set_tier_bitmask(meta.id, bm))
+                                    .await;
                         }
                     }
                 }
@@ -167,7 +156,6 @@ async fn run_serve(cfg: Config) {
         });
     }
 
-    // S3 uploader task.
     {
         let router = router.clone();
         let meta = meta.clone();
@@ -179,38 +167,33 @@ async fn run_serve(cfg: Config) {
         });
     }
 
-    // Eviction task.
     {
         let router = router.clone();
         let meta = meta.clone();
         let evict_notify = evict_notify.clone();
         let local_wm = TierWatermarks {
-            high_bytes: cfg.tiers.local.high_watermark_gb * 1024 * 1024 * 1024,
-            low_bytes: cfg.tiers.local.low_watermark_gb * 1024 * 1024 * 1024,
+            high_bytes: cfg.tiers.local.high_watermark_gb << 30,
+            low_bytes: cfg.tiers.local.low_watermark_gb << 30,
         };
         let nas_wm = TierWatermarks {
-            high_bytes: cfg.tiers.nas.high_watermark_gb * 1024 * 1024 * 1024,
-            low_bytes: cfg.tiers.nas.low_watermark_gb * 1024 * 1024 * 1024,
+            high_bytes: cfg.tiers.nas.high_watermark_gb << 30,
+            low_bytes: cfg.tiers.nas.low_watermark_gb << 30,
         };
-        let interval_secs = cfg.eviction.interval_secs;
-        let recency = cfg.eviction.recency_weight;
-        let freq = cfg.eviction.frequency_weight;
         tokio::spawn(async move {
             run_eviction(
                 router,
                 meta,
-                Duration::from_secs(interval_secs),
+                Duration::from_secs(cfg.eviction.interval_secs),
                 evict_notify,
                 local_wm,
                 nas_wm,
-                recency,
-                freq,
+                cfg.eviction.recency_weight,
+                cfg.eviction.frequency_weight,
             )
             .await;
         });
     }
 
-    // mDNS registration.
     {
         let port = cfg.daemon.http_port;
         tokio::spawn(async move {
@@ -218,7 +201,6 @@ async fn run_serve(cfg: Config) {
         });
     }
 
-    // FUSE mount (optional).
     #[cfg(feature = "fuse")]
     {
         let mount_path = cfg.daemon.mount_path.clone();
@@ -226,7 +208,7 @@ async fn run_serve(cfg: Config) {
         let meta_fuse = meta.clone();
         let rt = tokio::runtime::Handle::current();
         std::thread::spawn(move || {
-            use crate::fuse_handler::fuse_impl::VfsdFuse;
+            use fvfsd::fuse_handler::fuse_impl::VfsdFuse;
             let fs = VfsdFuse::new(router_fuse, meta_fuse, rt);
             let options = vec![
                 fuser::MountOption::RW,
@@ -239,13 +221,7 @@ async fn run_serve(cfg: Config) {
         });
     }
 
-    // HTTP server.
-    let state = Arc::new(AppState::new(
-        router,
-        meta,
-        evict_notify,
-        flush_notify,
-    ));
+    let state = Arc::new(AppState::new(router, meta, evict_notify, flush_notify));
     let app = build_router(state);
 
     let addr = format!("0.0.0.0:{}", cfg.daemon.http_port);
@@ -253,9 +229,7 @@ async fn run_serve(cfg: Config) {
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .expect("bind HTTP port");
-    axum::serve(listener, app)
-        .await
-        .expect("HTTP server error");
+    axum::serve(listener, app).await.expect("HTTP server error");
 }
 
 // ---------------------------------------------------------------------------
@@ -286,9 +260,9 @@ async fn run_migrate(cfg: Config, local_src: Option<PathBuf>, nas_src: Option<Pa
 
     println!("Migration complete:");
     println!("  Total files  : {}", report.total_files);
-    println!("  Total bytes  : {} MB", report.total_bytes / (1 << 20));
+    println!("  Total bytes  : {} MB", report.total_bytes >> 20);
     println!("  Duplicates   : {}", report.duplicates);
-    println!("  S3 uploaded  : {} MB", report.s3_upload_bytes / (1 << 20));
+    println!("  S3 uploaded  : {} MB", report.s3_upload_bytes >> 20);
     println!("  Errors       : {}", report.errors);
 }
 
@@ -298,23 +272,16 @@ async fn run_migrate(cfg: Config, local_src: Option<PathBuf>, nas_src: Option<Pa
 async fn run_status(url: String) {
     let status_url = format!("{}/v1/status", url.trim_end_matches('/'));
     match reqwest::get(&status_url).await {
-        Ok(resp) => {
-            match resp.json::<fvfs_core::DaemonStatus>().await {
-                Ok(status) => {
-                    println!("fvfsd v{} — uptime {}s", status.version, status.uptime_secs);
-                    for tier in &status.tiers {
-                        println!(
-                            "  {} : {} files, {} MB",
-                            tier.name,
-                            tier.files,
-                            tier.bytes / (1 << 20),
-                        );
-                    }
-                    println!("  WAL pending: {}", status.wal_pending);
+        Ok(resp) => match resp.json::<fvfs_core::DaemonStatus>().await {
+            Ok(status) => {
+                println!("fvfsd v{} — uptime {}s", status.version, status.uptime_secs);
+                for tier in &status.tiers {
+                    println!("  {} : {} files, {} MB", tier.name, tier.files, tier.bytes >> 20);
                 }
-                Err(e) => eprintln!("Failed to parse status response: {e}"),
+                println!("  WAL pending: {}", status.wal_pending);
             }
-        }
+            Err(e) => eprintln!("Failed to parse status response: {e}"),
+        },
         Err(e) => eprintln!("Failed to reach fvfsd at {status_url}: {e}"),
     }
 }

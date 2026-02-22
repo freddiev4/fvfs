@@ -1,0 +1,42 @@
+[package]
+name = "fvfs-bench"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+# Benchmark harnesses — criterion manages its own main().
+[[bench]]
+name = "storage"
+harness = false
+
+[[bench]]
+name = "metadata_stat"
+harness = false
+
+[[bench]]
+name = "concurrent_writes"
+harness = false
+
+[[bench]]
+name = "http_roundtrip"
+harness = false
+
+[[bench]]
+name = "tier_promotion"
+harness = false
+
+[dependencies]
+fvfs-core = { path = "../fvfs-core" }
+fvfsd     = { path = "../fvfsd" }
+
+tokio     = { workspace = true }
+bytes     = { workspace = true }
+futures   = { workspace = true }
+anyhow    = { workspace = true }
+tracing   = { workspace = true }
+criterion = { workspace = true }
+tempfile  = { workspace = true }
+reqwest   = { workspace = true }
+sha2      = { workspace = true }
+hex       = { workspace = true }
+axum      = { workspace = true }
